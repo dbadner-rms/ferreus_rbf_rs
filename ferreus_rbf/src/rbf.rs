@@ -919,6 +919,9 @@ impl RBFInterpolator {
 
         tree.set_local_coefficients(self.coefficients.point_coefficients.as_mat_ref());
 
+        // The stored evaluator only ever runs leaf passes, so the upward/downward pass state can be dropped
+        tree.release_upward_state();
+
         self.evaluator = Some(tree);
     }
 
