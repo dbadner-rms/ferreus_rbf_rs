@@ -434,14 +434,6 @@ impl RBFInterpolator {
     }
 
     fn setup_and_solve(&mut self) {
-        if self.points.nrows() >= self.params.naive_solve_threshold {
-            return crate::worker_pool::install(|| self.setup_and_solve_impl());
-        }
-
-        self.setup_and_solve_impl();
-    }
-
-    fn setup_and_solve_impl(&mut self) {
         let num_points = self.points.nrows();
         let num_val_cols = self.point_values.ncols();
 

@@ -922,41 +922,85 @@ pub fn get_approximation_coefficients(
         }
     }
 
-    let num_columns = interpolation_order.pow(*dimensions as u32);
+    // Select the dimension once before forming the tensor-product columns.
+    match *dimensions {
+        1 => get_tensor_product_coefficients::<1>(
+            interpolation_order,
+            &one_d_transfer_coefficients,
+            one_d_derivative_coefficients.as_deref(),
+        ),
+        2 => get_tensor_product_coefficients::<2>(
+            interpolation_order,
+            &one_d_transfer_coefficients,
+            one_d_derivative_coefficients.as_deref(),
+        ),
+        3 => get_tensor_product_coefficients::<3>(
+            interpolation_order,
+            &one_d_transfer_coefficients,
+            one_d_derivative_coefficients.as_deref(),
+        ),
+        _ => unreachable!("Only dimensions 1–3 are supported"),
+    }
+}
 
-    let mut transfer_coefficients = Mat::<f64>::zeros(cell_point_locations.nrows(), num_columns);
-    let mut gradient_coefficients = evaluate_gradients
-        .then(|| Mat::<f64>::zeros(cell_point_locations.nrows(), num_columns * *dimensions));
-
-    let dims = *dimensions;
-    let mut multi_idx = [0usize; 3];
-    let nrows = cell_point_locations.nrows();
-    for i in 0..nrows {
-        for col in 0..num_columns {
-            let mut rem = col;
-            for d in (0..dims).rev() {
-                multi_idx[d] = rem % interpolation_order;
-                rem /= interpolation_order;
+/// Forms tensor-product coefficients in the matrix's column-major order.
+fn get_tensor_product_coefficients<const D: usize>(
+    interpolation_order: usize,
+    one_d_transfer_coefficients: &[Mat<f64>],
+    one_d_derivative_coefficients: Option<&[Mat<f64>]>,
+) -> ApproximationCoefficients {
+    // The same contiguous loop handles values and derivatives. Derivatives start
+    // with dS/dx, then multiply the remaining dimensions in their original order.
+    fn fill_column<const D: usize, const DERIVATIVE: bool>(
+        columns: [&[f64]; D],
+        output: &mut [f64],
+    ) {
+        for (i, element) in output.iter_mut().enumerate() {
+            let mut value = if DERIVATIVE { columns[0][i] } else { 1.0 };
+            for d in (DERIVATIVE as usize)..D {
+                value *= columns[d][i];
             }
+            *element = value;
+        }
+    }
 
-            let mut v = 1.0;
-            for d in 0..dims {
-                v *= one_d_transfer_coefficients[d][(i, multi_idx[d])];
-            }
-            transfer_coefficients[(i, col)] = v;
+    let nrows = one_d_transfer_coefficients[0].nrows();
+    let num_columns = interpolation_order.pow(D as u32);
+    let mut transfer_coefficients = Mat::<f64>::zeros(nrows, num_columns);
+    let mut gradient_coefficients =
+        one_d_derivative_coefficients.map(|_| Mat::<f64>::zeros(nrows, num_columns * D));
 
-            if let Some(ref mut grads) = gradient_coefficients {
-                let derivs = one_d_derivative_coefficients.as_ref().unwrap();
-                for g in 0..dims {
-                    let mut v = derivs[g][(i, multi_idx[g])];
-                    for d in 0..dims {
-                        if d != g {
-                            v *= one_d_transfer_coefficients[d][(i, multi_idx[d])];
-                        }
+    let mut multi_idx = [0usize; D];
+    for col in 0..num_columns {
+        let columns: [&[f64]; D] =
+            std::array::from_fn(|d| one_d_transfer_coefficients[d].col_as_slice(multi_idx[d]));
+        fill_column::<D, false>(columns, transfer_coefficients.col_as_slice_mut(col));
+
+        if let Some(ref mut grads) = gradient_coefficients {
+            let derivs = one_d_derivative_coefficients.unwrap();
+            for g in 0..D {
+                let derivative_columns = std::array::from_fn(|d| {
+                    if d == 0 {
+                        derivs[g].col_as_slice(multi_idx[g])
+                    } else {
+                        let axis = d - 1;
+                        columns[axis + usize::from(axis >= g)]
                     }
-                    grads[(i, g * num_columns + col)] = v;
-                }
+                });
+                fill_column::<D, true>(
+                    derivative_columns,
+                    grads.col_as_slice_mut(g * num_columns + col),
+                );
             }
+        }
+
+        // The last dimension varies fastest, matching the original column order.
+        for d in (0..D).rev() {
+            multi_idx[d] += 1;
+            if multi_idx[d] < interpolation_order {
+                break;
+            }
+            multi_idx[d] = 0;
         }
     }
 

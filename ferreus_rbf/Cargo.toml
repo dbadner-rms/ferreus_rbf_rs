@@ -28,7 +28,11 @@ serde_json = "1.0.145"
 serde = { version = "1.0.228", features = ["derive", "rc"] }
 
 [target.'cfg(windows)'.dependencies]
-gdt-cpus = { version = "0.2606.1", default-features = false }
+mimalloc = { version = "0.1.52", optional = true }
+
+[features]
+default = ["mimalloc"]
+mimalloc = ["dep:mimalloc"]
 
 [profile.dev]
 opt-level = 3

@@ -114,7 +114,10 @@ mod rbf;
 mod rbf_test_functions;
 mod rtree;
 mod serde_faer_mat;
-mod worker_pool;
+
+#[cfg(all(target_os = "windows", feature = "mimalloc"))]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 /// Functions related to isosurfacing algorithms
 pub mod isosurfacing {

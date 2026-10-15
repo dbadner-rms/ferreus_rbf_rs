@@ -143,11 +143,6 @@ impl LeafTargetIndices {
         }
     }
 
-    /// Iterate global indices without allocating an index list.
-    fn iter<'a>(&'a self, targets: EvaluationTargets<'a>) -> impl Iterator<Item = usize> + 'a {
-        (0..self.len()).map(move |ordinal| self.target_index(ordinal, targets))
-    }
-
     /// Borrow point chunks; generate grid indices one chunk at a time.
     fn chunks<'a>(
         &'a self,
@@ -1319,14 +1314,38 @@ impl<K: KernelFunction + Send + Sync> FmmTree<K> {
         target_values_ref: MatRef<f64>,
         target_gradients_ref: Option<MatRef<f64>>,
     ) {
-        match evaluate_gradients {
-            false => self.leaf_pass_mode::<false>(
+        match (evaluate_gradients, self.dimensions) {
+            (false, Dimensions::One) => self.leaf_pass_mode::<false, 1>(
                 source_values,
                 target_points,
                 target_values_ref,
                 target_gradients_ref,
             ),
-            true => self.leaf_pass_mode::<true>(
+            (false, Dimensions::Two) => self.leaf_pass_mode::<false, 2>(
+                source_values,
+                target_points,
+                target_values_ref,
+                target_gradients_ref,
+            ),
+            (false, Dimensions::Three) => self.leaf_pass_mode::<false, 3>(
+                source_values,
+                target_points,
+                target_values_ref,
+                target_gradients_ref,
+            ),
+            (true, Dimensions::One) => self.leaf_pass_mode::<true, 1>(
+                source_values,
+                target_points,
+                target_values_ref,
+                target_gradients_ref,
+            ),
+            (true, Dimensions::Two) => self.leaf_pass_mode::<true, 2>(
+                source_values,
+                target_points,
+                target_values_ref,
+                target_gradients_ref,
+            ),
+            (true, Dimensions::Three) => self.leaf_pass_mode::<true, 3>(
                 source_values,
                 target_points,
                 target_values_ref,
@@ -1335,19 +1354,34 @@ impl<K: KernelFunction + Send + Sync> FmmTree<K> {
         }
     }
 
-    fn leaf_pass_mode<const WITH_GRADS: bool>(
+    fn leaf_pass_mode<const WITH_GRADS: bool, const D: usize>(
         &self,
         source_values: MatRef<f64>,
         target_points: EvaluationTargets,
         target_values_ref: MatRef<f64>,
         target_gradients_ref: Option<MatRef<f64>>,
     ) {
+        let chunk_size = self.eval_chunk_size.max(1);
         self.tree_lists
             .leaf_target_indices
             .par_iter()
-            .for_each(|(leaf, leaf_target_indices)| {
+            .flat_map(|(leaf, indices)| {
+                let jobs = indices.len().div_ceil(chunk_size);
+                (0..jobs)
+                    .into_par_iter()
+                    .map(move |job| (leaf, indices, job * chunk_size))
+            })
+            .for_each(|(leaf, indices, start)| {
+                let end = (start + chunk_size).min(indices.len());
+                let chunk = LeafTargetIndices::Points(
+                    (start..end)
+                        .map(|i| indices.target_index(i, target_points))
+                        .collect(),
+                );
+                let leaf_target_indices = &chunk;
+
                 if let Some(u_list) = self.tree_lists.u_lists.get(leaf) {
-                    self.particle_to_particle::<WITH_GRADS>(
+                    self.particle_to_particle::<WITH_GRADS, D>(
                         u_list,
                         target_points,
                         leaf_target_indices,
@@ -1368,7 +1402,7 @@ impl<K: KernelFunction + Send + Sync> FmmTree<K> {
     }
 
     /// Direct interaction between particles of adjacent leaf cells.
-    fn particle_to_particle<const WITH_GRADS: bool>(
+    fn particle_to_particle<const WITH_GRADS: bool, const D: usize>(
         &self,
         u_list: &HashSet<u64>,
         target_points: EvaluationTargets,
@@ -1377,87 +1411,97 @@ impl<K: KernelFunction + Send + Sync> FmmTree<K> {
         target_gradients_ref: Option<MatRef<f64>>,
         source_values: MatRef<f64>,
     ) {
-        let dims = target_points.dimensions();
-        let mut target_buffer = [0.0; 3];
-
-        u_list.iter().for_each(|u_cell| {
-            if let Some(u_cell_source_indices) = self.tree_lists.leaf_source_indices.get(u_cell) {
-                let u_cell_values = Mat::<f64>::from_fn(
-                    u_cell_source_indices.len(),
-                    source_values.shape().1,
-                    |i, j| *source_values.get(u_cell_source_indices[i], j),
-                );
-
-                let u_cell_points =
-                    utils::select_mat_rows(self.source_points.as_mat_ref(), u_cell_source_indices);
-
-                for rhs in 0..self.nrhs {
-                    let rhs_vals = u_cell_values.col(rhs);
-                    let value_ptr = target_values_ref.col(rhs).as_ptr() as *mut f64;
-
-                    let (grad_col0_ptr, grad_col1_ptr, grad_col2_ptr) = if WITH_GRADS {
-                        let target_gradients_ref = target_gradients_ref
-                            .expect("ValuesAndGradients mode requires gradient storage");
-                        let grad_start_col = rhs * dims;
-                        let grad_1_col = grad_start_col + 1;
-                        let grad_2_col = grad_start_col + 2;
-
-                        let grad_col0_ptr =
-                            target_gradients_ref.col(grad_start_col).as_ptr() as *mut f64;
-
-                        let grad_col1_ptr = if dims > 1 {
-                            Some(target_gradients_ref.col(grad_1_col).as_ptr() as *mut f64)
+        const B: usize = 4;
+        let channels = if WITH_GRADS { D + 1 } else { 1 };
+        let nrhs = self.nrhs;
+        let mut sums = vec![0.0; nrhs * channels * B];
+        for u_cell in u_list {
+            let Some(sources) = self.tree_lists.leaf_source_indices.get(u_cell) else {
+                continue;
+            };
+            for indices in cell_target_indices.chunks(target_points, B) {
+                sums.fill(0.0);
+                let targets: [[f64; D]; B] = std::array::from_fn(|t| {
+                    std::array::from_fn(|d| {
+                        if t < indices.len() {
+                            target_points.coordinate(indices[t], d)
                         } else {
-                            None
-                        };
-
-                        let grad_col2_ptr = if dims > 2 {
-                            Some(target_gradients_ref.col(grad_2_col).as_ptr() as *mut f64)
+                            0.0
+                        }
+                    })
+                });
+                for &source_index in sources {
+                    let source: [f64; D] =
+                        std::array::from_fn(|d| self.source_points[(source_index, d)]);
+                    let mut values = [0.0; B];
+                    let mut gradients = [[0.0; B]; D];
+                    let mut evaluate_target = |t: usize| {
+                        let target = &targets[t];
+                        let mut gradient = [0.0; D];
+                        let value = if WITH_GRADS {
+                            self.kernel
+                                .evaluate_value_gradient(
+                                    faer::RowRef::from_slice(target),
+                                    faer::RowRef::from_slice(&source),
+                                    &mut gradient,
+                                )
+                                .expect("Kernel gradient support was pre-checked")
                         } else {
-                            None
+                            self.kernel.evaluate(
+                                faer::RowRef::from_slice(target),
+                                faer::RowRef::from_slice(&source),
+                            )
                         };
-
-                        (grad_col0_ptr, grad_col1_ptr, grad_col2_ptr)
-                    } else {
-                        (std::ptr::null_mut(), None, None)
+                        values[t] = value;
+                        if WITH_GRADS {
+                            for d in 0..D {
+                                gradients[d][t] = gradient[d];
+                            }
+                        }
                     };
-
-                    for target_idx in cell_target_indices.iter(target_points) {
-                        let target = target_points.target(target_idx, &mut target_buffer);
-
-                        for s in 0..u_cell_source_indices.len() as usize {
-                            let source = u_cell_points.row(s);
-                            let w = rhs_vals[s];
-
+                    if indices.len() == B {
+                        for t in 0..B {
+                            evaluate_target(t);
+                        }
+                    } else {
+                        for t in 0..indices.len() {
+                            evaluate_target(t);
+                        }
+                    }
+                    // Reuse each interaction across RHS; keep target lanes contiguous.
+                    for (rhs, sums) in sums.chunks_exact_mut(channels * B).enumerate() {
+                        let w = source_values[(source_index, rhs)];
+                        for t in 0..B {
+                            sums[t] += values[t] * w;
                             if WITH_GRADS {
-                                let mut grad_buf = [0.0_f64; 3];
-                                let value = self
-                                    .kernel
-                                    .evaluate_value_gradient(target, source, &mut grad_buf[..dims])
-                                    .expect("Kernel gradient support was pre-checked");
-
-                                unsafe {
-                                    *value_ptr.add(target_idx) += value * w;
-                                    *grad_col0_ptr.add(target_idx) += grad_buf[0] * w;
-                                    if let Some(ptr) = grad_col1_ptr {
-                                        *ptr.add(target_idx) += grad_buf[1] * w;
-                                    }
-                                    if let Some(ptr) = grad_col2_ptr {
-                                        *ptr.add(target_idx) += grad_buf[2] * w;
-                                    }
-                                }
-                            } else {
-                                let value = self.kernel.evaluate(target, source);
-
-                                unsafe {
-                                    *value_ptr.add(target_idx) += value * w;
+                                for d in 0..D {
+                                    sums[(d + 1) * B + t] += gradients[d][t] * w;
                                 }
                             }
                         }
                     }
                 }
+                for rhs in 0..nrhs {
+                    for channel in 0..channels {
+                        let column = if channel == 0 {
+                            target_values_ref.col(rhs)
+                        } else {
+                            target_gradients_ref
+                                .expect("Gradient storage was pre-checked")
+                                .col(rhs * D + channel - 1)
+                        };
+                        let ptr = column.as_ptr() as *mut f64;
+                        // Parallel jobs write disjoint target-index chunks,
+                        // including within a leaf.
+                        for (t, &index) in indices.iter().enumerate() {
+                            unsafe {
+                                *ptr.add(index) += sums[(rhs * channels + channel) * B + t];
+                            }
+                        }
+                    }
+                }
             }
-        });
+        }
     }
 
     /// Maps the local coefficients of a cell to the targets in the cell.
