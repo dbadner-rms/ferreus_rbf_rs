@@ -206,6 +206,49 @@ impl From<Solvers> for config::Solvers {
     }
 }
 
+/// Controls whether a size is calculated automatically or provided by the user.
+/// Auto calculates the size when the hierarchy or tree is built.
+/// Fixed(n) uses the provided positive value without adjusting it.
+#[pyclass(frozen, eq)]
+#[derive(Clone, Copy, PartialEq)]
+pub struct SizePolicy {
+    inner: config::SizePolicy,
+}
+
+#[pymethods]
+impl SizePolicy {
+    #[classattr]
+    #[allow(non_snake_case)]
+    fn Auto() -> Self {
+        Self {
+            inner: config::SizePolicy::Auto,
+        }
+    }
+
+    #[staticmethod]
+    #[allow(non_snake_case)]
+    fn Fixed(value: usize) -> PyResult<Self> {
+        if value == 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "fixed size must be positive",
+            ));
+        }
+        Ok(Self {
+            inner: config::SizePolicy::Fixed(value),
+        })
+    }
+
+    fn __repr__(&self) -> String {
+        match self.inner {
+            config::SizePolicy::Auto => "SizePolicy.Auto".into(),
+            config::SizePolicy::Fixed(n) => format!("SizePolicy.Fixed({n})"),
+        }
+    }
+}
+
+/// Maximum number of points in the coarsest level.
+/// Auto uses ceil(N / 32), clamped between 512 and 4096, after duplicate removal.
+/// Fixed(n) uses the provided positive limit without adjusting it.
 #[pyclass]
 #[derive(Clone)]
 pub struct DDMParams {
@@ -219,14 +262,14 @@ impl DDMParams {
         leaf_threshold: usize,
         overlap_knn: usize,
         coarse_reduction_factor: usize,
-        coarse_threshold: usize,
+        coarse_threshold: SizePolicy,
     ) -> PyResult<Self> {
         Ok(Self {
             inner: config::DDMParams {
                 leaf_threshold,
                 overlap_knn,
                 coarse_reduction_factor,
-                coarse_threshold,
+                coarse_threshold: coarse_threshold.inner,
             },
         })
     }
@@ -251,6 +294,9 @@ impl From<FmmCompressionType> for config::FmmCompressionType {
     }
 }
 
+/// Maximum number of points per cell before it is subdivided.
+/// For fitting, Auto uses max(256, the largest power of two <= interpolation_order^dimensions).
+/// For evaluation, Auto uses 256. Fixed(n) uses the provided positive limit for both.
 #[pyclass]
 #[derive(Clone)]
 pub struct FmmParams {
@@ -262,7 +308,7 @@ impl FmmParams {
     #[pyo3(signature=(interpolation_order, max_points_per_cell, compression_type, epsilon, eval_chunk_size))]
     fn new(
         interpolation_order: usize,
-        max_points_per_cell: usize,
+        max_points_per_cell: SizePolicy,
         compression_type: FmmCompressionType,
         epsilon: f64,
         eval_chunk_size: usize,
@@ -270,7 +316,7 @@ impl FmmParams {
         Ok(Self {
             inner: config::FmmParams {
                 interpolation_order,
-                max_points_per_cell,
+                max_points_per_cell: max_points_per_cell.inner,
                 compression_type: compression_type.into(),
                 epsilon,
                 eval_chunk_size,
@@ -621,7 +667,7 @@ impl Params {
                         false => config::FmmParams::new_defaults(kernel_type.into()),
                     }
                 },
-                naive_solve_threshold: naive_solve_threshold.unwrap_or(4096),
+                naive_solve_threshold: naive_solve_threshold.unwrap_or(1500),
                 direct_eval_threshold: direct_eval_threshold
                     .unwrap_or(defaults.direct_eval_threshold),
                 direct_eval_batch_size: direct_eval_batch_size

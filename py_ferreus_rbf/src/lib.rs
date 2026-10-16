@@ -17,6 +17,7 @@ pub fn ferreus_rbf(m: &Bound<'_, PyModule>) -> PyResult<()> {
     faer::set_global_parallelism(faer::Par::Seq);
 
     let cfg = PyModule::new(m.py(), "config")?;
+    cfg.add_class::<python_bindings::SizePolicy>()?;
     cfg.add_class::<python_bindings::DDMParams>()?;
     cfg.add_class::<python_bindings::FmmParams>()?;
     cfg.add_class::<python_bindings::Solvers>()?;

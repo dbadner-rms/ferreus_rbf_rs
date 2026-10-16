@@ -12,7 +12,7 @@ Defaults:
 - `solver_type`: [`Solvers::FGMRES`]
 - `ddm_params`: [`DDMParams::default()`]
 - `fmm_params`: [`FmmParams::new_defaults(kernel_type)`]
-- `naive_solve_threshold`: `4096`
+- `naive_solve_threshold`: `1500`
 - `direct_eval_threshold`: `4096` (direct evaluation for fewer sources; `0` forces FMM)
 - `direct_eval_batch_size`: `128` (positive target batch size, independent of FMM)
 - `test_unique`: `true`

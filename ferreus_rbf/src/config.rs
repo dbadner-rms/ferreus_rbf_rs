@@ -13,6 +13,38 @@ use crate::interpolant_config::RBFKernelType;
 use ferreus_bbfmm::{self, M2LCompressionType};
 use serde::{Deserialize, Serialize};
 
+/// Controls whether a size is calculated automatically or provided by the user.
+/// Auto calculates the size when the hierarchy or tree is built.
+/// Fixed(n) uses the provided positive value without adjusting it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Default)]
+pub enum SizePolicy {
+    #[default]
+    Auto,
+    Fixed(usize),
+}
+
+// Old saved models stored integers. Preserve them as explicit fixed sizes.
+impl<'de> Deserialize<'de> for SizePolicy {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        enum Tagged {
+            Auto,
+            Fixed(usize),
+        }
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Stored {
+            Legacy(usize),
+            Policy(Tagged),
+        }
+        match Stored::deserialize(deserializer)? {
+            Stored::Policy(Tagged::Auto) => Ok(Self::Auto),
+            Stored::Legacy(n) | Stored::Policy(Tagged::Fixed(n)) if n > 0 => Ok(Self::Fixed(n)),
+            _ => Err(serde::de::Error::custom("fixed size must be positive")),
+        }
+    }
+}
+
 /// Parameters controlling construction of the **domain decomposition hierarchy**.
 ///
 /// `ferreus_rbf` employs a *domain decomposition preconditioner* to accelerate
@@ -38,8 +70,8 @@ use serde::{Deserialize, Serialize};
 /// - `leaf_threshold`: `256`
 /// - `overlap_knn`: `16`
 /// - `coarse_reduction_factor`: `128`
-/// - `coarse_threshold`: `4096`
-#[derive(Clone, Copy, Serialize, Deserialize, Debug)]
+/// - `coarse_threshold`: [`SizePolicy::Auto`]
+#[derive(Clone, Copy, Debug)]
 pub struct DDMParams {
     /// Target maximum number of internal points within a leaf domain.
     pub leaf_threshold: usize,
@@ -52,7 +84,21 @@ pub struct DDMParams {
     pub coarse_reduction_factor: usize,
 
     /// Maximum number of points in the coarsest level.
-    pub coarse_threshold: usize,
+    /// Auto uses ceil(N / 32), clamped between 512 and 4096, after duplicate removal.
+    /// Fixed(n) uses the provided positive limit without adjusting it.
+    pub coarse_threshold: SizePolicy,
+}
+
+impl DDMParams {
+    pub(crate) fn resolved_coarse_threshold(&self, num_points: usize) -> usize {
+        match self.coarse_threshold {
+            SizePolicy::Auto => num_points.div_ceil(32).clamp(512, 4096),
+            SizePolicy::Fixed(n) => {
+                assert!(n > 0, "fixed coarse threshold must be positive");
+                n
+            }
+        }
+    }
 }
 
 impl Default for DDMParams {
@@ -61,7 +107,7 @@ impl Default for DDMParams {
             leaf_threshold: 256,
             overlap_knn: 16,
             coarse_reduction_factor: 128,
-            coarse_threshold: 4096,
+            coarse_threshold: SizePolicy::Auto,
         }
     }
 }
@@ -155,7 +201,7 @@ impl ParamsBuilder {
             solver_type: Solvers::FGMRES,
             ddm_params: DDMParams::default(),
             fmm_params: FmmParams::new_defaults(kernel_type),
-            naive_solve_threshold: 4096,
+            naive_solve_threshold: 1500,
             direct_eval_threshold: default_direct_eval_threshold(),
             direct_eval_batch_size: default_direct_eval_batch_size(),
             test_unique: true,
@@ -247,7 +293,9 @@ pub struct FmmParams {
     pub interpolation_order: usize,
 
     /// Maximum number of points per cell before it is subdivided.
-    pub max_points_per_cell: usize,
+    /// For fitting, Auto uses max(256, the largest power of two <= interpolation_order^dimensions).
+    /// For evaluation, Auto uses 256. Fixed(n) uses the provided positive limit for both.
+    pub max_points_per_cell: SizePolicy,
 
     /// Whether to compress multipole-to-local (M2L) operators using ACA
     /// with truncated SVD.
@@ -260,25 +308,41 @@ pub struct FmmParams {
     pub eval_chunk_size: usize,
 }
 
-impl From<FmmParams> for ferreus_bbfmm::FmmParams {
-    fn from(v: FmmParams) -> Self {
+impl FmmParams {
+    pub(crate) fn to_bbfmm_params(
+        self,
+        dimensions: usize,
+        fitting: bool,
+    ) -> ferreus_bbfmm::FmmParams {
+        let max_points_per_cell = match self.max_points_per_cell {
+            SizePolicy::Auto if fitting => {
+                let nodes = self
+                    .interpolation_order
+                    .saturating_pow(dimensions as u32)
+                    .max(1);
+                256.max(1usize << nodes.ilog2())
+            }
+            SizePolicy::Auto => 256,
+            SizePolicy::Fixed(n) => {
+                assert!(n > 0, "fixed leaf capacity must be positive");
+                n
+            }
+        };
         ferreus_bbfmm::FmmParams {
-            max_points_per_cell: v.max_points_per_cell,
-            compression_type: v.compression_type.into(),
-            epsilon: v.epsilon,
-            eval_chunk_size: v.eval_chunk_size,
+            max_points_per_cell,
+            compression_type: self.compression_type.into(),
+            epsilon: self.epsilon,
+            eval_chunk_size: self.eval_chunk_size,
         }
     }
-}
 
-impl FmmParams {
     /// Returns a new [`FmmParams`] populated with defaults appropriate for
     /// the given kernel type.
     pub fn new_defaults(kernel_type: RBFKernelType) -> Self {
         let default_interpolation_order = get_default_fmm_interpolation_order(kernel_type);
         Self {
             interpolation_order: default_interpolation_order,
-            max_points_per_cell: 256,
+            max_points_per_cell: SizePolicy::Auto,
             compression_type: FmmCompressionType::ACA,
             epsilon: 10f64.powi(-(default_interpolation_order as i32)),
             eval_chunk_size: 1024,

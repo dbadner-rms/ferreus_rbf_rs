@@ -484,7 +484,11 @@ impl RBFInterpolator {
                 (*self.interpolant_settings).into(),
                 sparse_tree,
                 None,
-                Some(self.params.fmm_params.into()),
+                Some(
+                    self.params
+                        .fmm_params
+                        .to_bbfmm_params(self.points.ncols(), true),
+                ),
             );
 
             let fmm_tree = Mutex::new(fmm_tree);
@@ -740,7 +744,11 @@ impl RBFInterpolator {
             (*self.interpolant_settings).into(),
             sparse,
             evaluator_extents,
-            Some(self.params.fmm_params.into()),
+            Some(
+                self.params
+                    .fmm_params
+                    .to_bbfmm_params(self.points.ncols(), false),
+            ),
             targets,
         );
 

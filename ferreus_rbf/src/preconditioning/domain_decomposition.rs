@@ -74,6 +74,7 @@ impl DDMTree {
         global_trend: &Option<GlobalTrendTransform>,
     ) -> Self {
         let (num_points, points_ncols) = points.shape();
+        let coarse_threshold = ddm_params.resolved_coarse_threshold(num_points);
 
         let mut levels: Vec<Level> = Vec::new();
 
@@ -83,11 +84,11 @@ impl DDMTree {
 
         let num_level_reductions = get_num_level_reductions(
             active_point_indices.len(),
-            ddm_params.coarse_threshold,
+            coarse_threshold,
             ddm_params.coarse_reduction_factor,
         );
 
-        while active_point_indices.len() > ddm_params.coarse_threshold {
+        while active_point_indices.len() > coarse_threshold {
             let mut root = Domain::new(active_point_indices.clone());
             root.internal_points_mask = vec![true; active_point_indices.len()];
 
@@ -181,7 +182,7 @@ impl DDMTree {
 
             let num_level_coarse_points = get_num_level_coarse_points(
                 active_point_indices.len(),
-                ddm_params.coarse_threshold,
+                coarse_threshold,
                 remaining_level_reductions,
             );
 
@@ -491,7 +492,7 @@ mod tests {
             leaf_threshold: 5,
             overlap_knn: 2,
             coarse_reduction_factor: 128,
-            coarse_threshold: 10,
+            coarse_threshold: crate::config::SizePolicy::Fixed(10),
         };
         let interpolant_settings = generate_interpolant_settings();
 
@@ -539,7 +540,7 @@ mod tests {
             leaf_threshold: 8,
             overlap_knn: 2,
             coarse_reduction_factor: 128,
-            coarse_threshold: 12,
+            coarse_threshold: crate::config::SizePolicy::Fixed(12),
         };
         let interpolant_settings = generate_interpolant_settings();
         let points = generate_points(96, dim);
@@ -578,7 +579,7 @@ mod tests {
             leaf_threshold: 9,
             overlap_knn: 2,
             coarse_reduction_factor: 128,
-            coarse_threshold: 14,
+            coarse_threshold: crate::config::SizePolicy::Fixed(14),
         };
         let interpolant_settings = generate_interpolant_settings();
         let points = generate_points(80, dim);
@@ -628,7 +629,7 @@ mod tests {
             leaf_threshold: 8,
             overlap_knn: 2,
             coarse_reduction_factor: 128,
-            coarse_threshold: 16,
+            coarse_threshold: crate::config::SizePolicy::Fixed(16),
         };
         let interpolant_settings = generate_interpolant_settings();
         let points = generate_points(96, dim);
@@ -699,7 +700,7 @@ mod tests {
             leaf_threshold: 8,
             overlap_knn: 2,
             coarse_reduction_factor: 128,
-            coarse_threshold: 25, // >= npoints -> no fine levels
+            coarse_threshold: crate::config::SizePolicy::Fixed(25), // >= npoints -> no fine levels
         };
         let ddm = DDMTree::new(points.as_ref(), &interpolant_settings, params, &None);
         assert_eq!(ddm.levels.len(), 1, "only coarse level expected");

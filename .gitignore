@@ -212,3 +212,5 @@ cython_debug/
 .agents
 
 _testing_*
+
+*investigation

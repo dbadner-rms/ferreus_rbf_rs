@@ -11,8 +11,19 @@
 '''
 
 from enum import Enum
-from typing import Optional
+from typing import ClassVar, Optional
 from ferreus_rbf.interpolant_config import RBFKernelType
+
+class SizePolicy:
+    """
+    Controls whether a size is calculated automatically or provided by the user.
+    Auto calculates the size when the hierarchy or tree is built.
+    Fixed(n) uses the provided positive value without adjusting it.
+    """
+    Auto: ClassVar["SizePolicy"]
+    @staticmethod
+    def Fixed(value: int) -> "SizePolicy": ...
+    def __repr__(self) -> str: ...
 
 class Solvers(Enum):
     """
@@ -67,7 +78,7 @@ class DDMParams:
     - `leaf_threshold`: `256`  
     - `overlap_knn`: `16`  
     - `coarse_reduction_factor`: `128`  
-    - `coarse_threshold`: `4096`     
+    - `coarse_threshold`: `SizePolicy.Auto`     
 
     Parameters
     ----------
@@ -77,15 +88,17 @@ class DDMParams:
         Number of nearest neighbours of each internal point to query to find overlapping points.
     coarse_reducation_factor : int
         Maximum reduction factor between consecutive levels of the domain decomposition hierarchy.
-    coarse_threshold : int
+    coarse_threshold : SizePolicy
         Maximum number of points in the coarsest level.
+        Auto uses ceil(N / 32), clamped between 512 and 4096, after duplicate removal.
+        Fixed(n) uses the provided positive limit without adjusting it.
     """
     def __init__(
         self,
         leaf_threshold: int,
         overlap_knn: int,
         coarse_reduction_factor: int,
-        coarse_threshold: int,
+        coarse_threshold: SizePolicy,
     ) -> None: ...
 
 class FmmParams:
@@ -115,7 +128,7 @@ class FmmParams:
     Default values when [`FmmParams`][ferreus_rbf.config.FmmParams] isn't provided to [`RBFInterpolator`][ferreus_rbf.RBFInterpolator]: 
     
     - `interpolation_order`: *kernel dependent*  
-    - `max_points_per_cell`: `256`  
+    - `max_points_per_cell`: `SizePolicy.Auto`  
     - `compression_type`: [`FmmCompressionType.ACA`][ferreus_rbf.config.FmmCompressionType.ACA]  
     - `epsilon`: `10^(-interpolation_order)`  
     - `eval_chunk_size`: `1024`  
@@ -124,8 +137,10 @@ class FmmParams:
     ----------
     interpolation_order : int
         Number of Chebyshev interpolation nodes per dimension.
-    max_points_per_cell : int
+    max_points_per_cell : SizePolicy
         Maximum number of points per cell before it is subdivided.
+        For fitting, Auto uses max(256, the largest power of two <= interpolation_order^dimensions).
+        For evaluation, Auto uses 256. Fixed(n) uses the provided positive limit for both.
     compression_type : FmmCompressionType
         What type of compression to apply to the M2L operators.
     epsilon : float
@@ -136,7 +151,7 @@ class FmmParams:
     def __init__(
         self,
         interpolation_order: int,
-        max_points_per_cell: int,
+        max_points_per_cell: SizePolicy,
         compression_type: FmmCompressionType,
         epsilon: float,
         eval_chunk_size: int,
@@ -157,7 +172,7 @@ class Params:
     - `fmm_params`: Default FmmParams  
     - `direct_eval_threshold`: `4096`
     - `direct_eval_batch_size`: `128`
-    - `naive_solve_threshold`: `4096`  
+    - `naive_solve_threshold`: `1500`  
     - `test_unique`: `true`  
     """
     def __init__(

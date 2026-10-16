@@ -23,17 +23,21 @@ Orders that are too low may stall solver convergence.
 
 ### Default Values
 - `interpolation_order`: *kernel dependent*
-- `max_points_per_cell`: `256`
+- `max_points_per_cell`: [`SizePolicy::Auto`](crate::config::SizePolicy::Auto)
 - `compression_type`: [`FmmCompressionType::ACA`]
 - `epsilon`: `10^(-interpolation_order)`
 - `eval_chunk_size`: `1024`
+
+Maximum number of points per cell before it is subdivided.
+For fitting, Auto uses max(256, the largest power of two <= interpolation_order^dimensions).
+For evaluation, Auto uses 256. Fixed(n) uses the provided positive limit for both.
 
 # Examples
 ```
 use ferreus_rbf::{
     config::{
         FmmParams, 
-        FmmCompressionType
+        FmmCompressionType, SizePolicy
     }, 
     interpolant_config::RBFKernelType
 };
@@ -42,5 +46,5 @@ use ferreus_rbf::{
 let fmm = FmmParams::new_defaults(RBFKernelType::Linear);
 ///
 assert_eq!(fmm.compression_type, FmmCompressionType::ACA);
-assert_eq!(fmm.max_points_per_cell, 256);
+assert_eq!(fmm.max_points_per_cell, SizePolicy::Auto);
 ```
