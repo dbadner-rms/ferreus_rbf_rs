@@ -31,7 +31,7 @@ Add the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ferreus_bbfmm = "0.2"
+ferreus_bbfmm = "0.3"
 ```
 
 Then define a kernel that implements the appropriate trait and construct an

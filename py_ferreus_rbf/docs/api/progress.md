@@ -1,6 +1,6 @@
 # Progress & Events
 
-::: ferreus_rbf.Progress
+::: ferreus_rbf.progress.Progress
 
 ## Event payloads
 
@@ -12,7 +12,11 @@
 
 ::: ferreus_rbf.progress.SurfacingProgress
 
-### Type aliases
+### Callback types
+
+`ProgressEvent` is an exported marker class. Callbacks receive one of the
+concrete payload classes above, rather than an instance of this marker.
+`ProgressCallback` describes the callback signature in type annotations.
 
 ::: ferreus_rbf.progress.ProgressEvent
 ::: ferreus_rbf.progress.ProgressCallback
@@ -20,17 +24,17 @@
 Example use:
 -----------
 ```python
+from typing import Union
 from ferreus_rbf.progress import (
     Progress,
     SolverIteration,
     SurfacingProgress,
     DuplicatesRemoved,
     Message,
-    ProgressEvent
 )
 
-# Create a function to handle each ProgressEvent type
-def on_progress(event: ProgressEvent) -> None:
+# Create a function to handle each concrete payload type
+def on_progress(event: Union[DuplicatesRemoved, SolverIteration, SurfacingProgress, Message]) -> None:
     if isinstance(event, DuplicatesRemoved):
         print(f"Removed duplicates: {event.num_duplicates}")
     elif isinstance(event, SolverIteration):

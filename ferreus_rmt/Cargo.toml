@@ -1,6 +1,6 @@
 [package]
 name = "ferreus_rmt"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 authors = ["Daniel Owen <daniel.owen@live.com.au>"]
 description = "Fast, surface-following regularised marching tetrahedra isosurface extraction"

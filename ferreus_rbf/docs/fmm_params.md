@@ -18,6 +18,8 @@ Increasing the interpolation order improves accuracy but also increases
 computational cost. Default interpolation order:
 - Linear and Spheroidal kernels -> order `7`
 - ThinPlateSpline kernel -> order `9`
+- WendlandsC2 kernel -> order `9`
+- Gaussian and Cubic2 kernels -> order `10`
 - Cubic kernel -> order `11`  
 Orders that are too low may stall solver convergence.
 

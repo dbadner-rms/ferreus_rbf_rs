@@ -46,6 +46,7 @@ pip install ferreus_rmt
 
 ---
 ## Quick start
+### Sphere example
 ```python
 import numpy as np
 from ferreus_rmt import build_isosurface

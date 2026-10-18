@@ -23,20 +23,16 @@ seed_points = np.array(
     ]
 )
 
-# Define the function values of the seed points
-seed_values = np.array([0.0, 0.0])
-
 # Define the isovalue at which to surface
 isovalue = 0.0
 
 # Extract the isosurface
 mesh = build_isosurface(
+    seed_points,
     extents,
     resolution,
     isovalue,
     sphere,
-    seed_points,
-    seed_values,
 )
 
 # Save the isosurface out to an obj file

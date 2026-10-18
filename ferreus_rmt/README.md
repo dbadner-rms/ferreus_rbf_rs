@@ -42,7 +42,7 @@ Add the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ferreus_rmt = "0.1"
+ferreus_rmt = "0.2"
 ```
 
 ---
@@ -88,6 +88,7 @@ let mesh = ferreus_rmt::build_isosurface(
     seed_points.as_ref(),
     &extents,
     resolution,
+    None,
     isovalue,
     &mut surface_fn,
     None,

@@ -1,6 +1,6 @@
 import numpy as np
 from pathlib import Path
-from ferreus_rbf.isosurfacing import build_isosurface, BoundaryClosure
+from ferreus_rmt import build_isosurface, BoundaryClosure
 
 # Define a function to evaluate an isosurface from
 # In this example we'll create a unit sphere

@@ -126,6 +126,7 @@ nav:
         - RBFKernelType: api/enums/RBFKernelType.md
         - SpheroidalOrder: api/enums/SpheroidalOrder.md
       - Config:
+        - SizePolicy: api/SizePolicy.md
         - Params: api/Params.md
         - DDMParams: api/DDMParams.md
         - FmmParams: api/FmmParams.md

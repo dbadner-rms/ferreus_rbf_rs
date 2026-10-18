@@ -269,6 +269,15 @@ fn get_box_corners(minimum: [f64; 3], maximum: [f64; 3]) -> Mat<f64> {
 }
 
 /// Returns the world extents that an evaluator must cover for extraction.
+///
+/// `sampling_transform` is an optional affine transform applied to the sampling lattice
+/// to control its orientation and relative spacing. Provide the 3 x 3 linear part of
+/// the transform from world coordinates to sampling coordinates. If `None`, the
+/// default lattice is used. Use the same transform and resolution as the extraction.
+///
+/// This is useful for surfaces with a strong directional trend.
+/// Aligning the lattice with the structure allows finer sampling across thin features
+/// and coarser sampling along smoother directions.
 #[inline(always)]
 pub fn get_evaluation_extents(
     extents: &[f64],

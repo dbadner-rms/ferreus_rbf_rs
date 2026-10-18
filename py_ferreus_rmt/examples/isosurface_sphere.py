@@ -1,6 +1,6 @@
 import numpy as np
 from pathlib import Path
-from ferreus_rbf.isosurfacing import build_isosurface
+from ferreus_rmt import build_isosurface
 
 
 # Define a function to evaluate an isosurface from
@@ -23,21 +23,21 @@ seed_points = np.array(
     ]
 )
 
-# Define the function values of the seed points
-seed_values = np.array([0.0, 0.0])
-
 # Define the isovalue at which to surface
 isovalue = 0.0
 
 # Extract the isosurface
 mesh = build_isosurface(
+    seed_points,
     extents,
     resolution,
     isovalue,
     sphere,
-    seed_points,
-    seed_values,
 )
+
+# Check that extraction produced a valid mesh
+assert len(mesh.vertices) > 0 and np.isfinite(mesh.vertices).all()
+assert len(mesh.facets) > 0 and mesh.facets.max() < len(mesh.vertices)
 
 # Save the isosurface out to an obj file
 surface_name = f"isosurface_sphere_{resolution}m"

@@ -24,6 +24,9 @@ rbfi = RBFInterpolator(
     interpolant_settings,
 )
 
+# Check that the interpolator reproduces the source values
+np.testing.assert_allclose(rbfi.evaluate(points), point_values, atol=1e-6)
+
 # Build a 2D grid of target points in [0, 1]^2 to evaluate the RBF at
 n = 50
 x_coords = np.linspace(0.0, 1.0, n)
@@ -33,6 +36,7 @@ target_points = np.column_stack((X.ravel(), Y.ravel()))
 
 # Evaluate the RBF at the target points
 Z = rbfi.evaluate(target_points).reshape(n, n)
+assert np.isfinite(Z).all()
 
 # Plot a surface of the evaluated values
 fig = plt.figure(figsize=(8, 6))

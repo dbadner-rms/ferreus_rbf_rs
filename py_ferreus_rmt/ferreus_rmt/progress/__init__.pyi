@@ -28,11 +28,11 @@ class Message:
     """
     message: str
 
-ProgressEvent = Union[IsosurfaceProgress, Message]
-"""Union of all progress event payloads passed to :class:`Progress` callbacks."""
+class ProgressEvent:
+    """Marker exported by the extension; callbacks receive IsosurfaceProgress or Message."""
 
-ProgressCallback = Callable[[ProgressEvent], None]
-"""Callable accepting one :data:`ProgressEvent` and returning ``None``."""
+ProgressCallback = Callable[[Union[IsosurfaceProgress, Message]], None]
+"""Callable accepting a concrete event payload and returning ``None``."""
 
 class Progress:
     """

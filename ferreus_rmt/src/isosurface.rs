@@ -451,8 +451,11 @@ fn emit_message(progress_callback: Option<&dyn ProgressSink>, message: impl Into
     }
 }
 
-/// Convenience wrapper for [`build_isosurface`]` that can extract multiple meshes from a vec of
+/// Convenience wrapper for [`build_isosurface`] that can extract multiple meshes from a vec of
 /// isovalues at once.
+///
+/// `sampling_transform` is an optional affine transform applied to the sampling lattice
+/// to control its orientation and relative spacing. See [`build_isosurface`] for details.
 pub fn build_isosurfaces<F>(
     seed_points: MatRef<f64>,
     extents: &[f64],
@@ -523,10 +526,14 @@ where
 /// `resolution` is the maximum nominal world-space sampling distance,
 /// not a maximum output triangle-edge length.
 ///
-/// `sampling_transform` maps world row vectors into sampling coordinates.
-/// RMT uses its inverse to construct the world-space lattice and derives
-/// the sampling density internally. Uniform scaling of this matrix does
-/// not affect the resulting lattice.
+/// `sampling_transform` is an optional affine transform applied to the sampling lattice
+/// to control its orientation and relative spacing. Provide the 3 x 3 linear part of
+/// the transform from world coordinates to sampling coordinates. If `None`, the
+/// default lattice is used. The `resolution` controls the overall sampling distance,
+/// so uniform scaling of the transform has no effect.
+///
+/// This is useful for surfaces with a strong directional trend. Aligning the lattice with the
+/// structure allows finer sampling across thin features and coarser sampling along smoother directions.
 ///
 /// Seeds, callback inputs, callback gradients, extents and returned vertices
 /// are all expressed in world coordinates.

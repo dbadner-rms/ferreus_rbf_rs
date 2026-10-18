@@ -21,8 +21,8 @@ interpolation_order = 7
 sparse_tree = False
 
 # Store axis metadata instead of a matrix of all target coordinates.
-grid = TargetGrid.from_spacing([-1.0, -1.0, 1.0, 1.0], [0.1, 0.1])
-# Equivalently: TargetGrid(origin=[-1.0, -1.0], spacing=[0.1, 0.1], shape=[21, 21])
+grid = TargetGrid.from_spacing([-1.0, -1.0, -1.0, 1.0, 1.0, 1.0], [0.1, 0.1, 0.1])
+# Equivalently: TargetGrid(origin=[-1.0]*3, spacing=[0.1]*3, shape=[21]*3)
 print(f"Grid shape: {grid.shape()}, target count: {grid.point_count()}")
 
 tree = FmmTree(

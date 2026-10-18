@@ -16,7 +16,45 @@ import numpy.typing as npt
 from ferreus_rbf.config import Params
 from ferreus_rbf.progress import Progress
 from ferreus_rbf.interpolant_config import InterpolantSettings
-from ferreus_rbf.isosurfacing import Mesh, BoundaryClosure
+from ferreus_rbf.isosurfacing import Mesh as Mesh, BoundaryClosure as BoundaryClosure
+
+def get_evaluation_extents(
+    extents: npt.NDArray[np.float64],
+    resolution: float,
+    *,
+    sampling_transform: npt.NDArray[np.float64] | None = None,
+) -> list[float]:
+    """Return world-coordinate bounds covering all lattice evaluation points.
+
+    Parameters
+    ----------
+    extents : npt.NDArray[np.float64]
+        Finite clipping bounds [xmin, ymin, zmin, xmax, ymax, zmax], shape (6,).
+    resolution : float
+        Finite, positive world-space sampling resolution.
+    sampling_transform : npt.NDArray[np.float64] | None, optional
+        Optional affine transform applied to the sampling lattice to control its
+        orientation and relative spacing. Provide the 3 x 3 linear part of the
+        transform from world coordinates to sampling coordinates.
+        If None, the default lattice is used. The resolution controls the overall
+        sampling distance, so uniform scaling of the transform has no effect.
+
+        This is useful for surfaces with a strong directional trend. Aligning the lattice with the
+        structure allows finer sampling across thin features and coarser sampling along smoother directions.
+
+    Returns
+    -------
+    list[float]
+        Six world-coordinate bounds covering the lattice points sampled during
+        extraction, which can extend beyond the clipping bounds. Use these bounds
+        when preparing an evaluator for the same resolution and transform.
+
+    Raises
+    ------
+    ValueError
+        If the bounds, resolution, or sampling transform are invalid.
+    """
+    ...
 
 class GlobalTrend:
     """

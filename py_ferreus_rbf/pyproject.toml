@@ -7,6 +7,7 @@ name = "ferreus_rbf"
 version = "0.3.0"
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Daniel Owen", email = "daniel.owen@live.com.au"}]
 description = "Fast, memory efficient radial basis function (RBF) interpolation library"
 requires-python = ">=3.8"

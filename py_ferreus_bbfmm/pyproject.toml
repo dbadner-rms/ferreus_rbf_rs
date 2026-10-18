@@ -7,6 +7,7 @@ name = "ferreus_bbfmm"
 version = "0.3.0"
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Daniel Owen", email = "daniel.owen@live.com.au"}]
 description = "Parallel black box fast multipole method (BBFMM) library"
 requires-python = ">=3.8"

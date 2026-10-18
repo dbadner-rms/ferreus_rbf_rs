@@ -40,7 +40,6 @@ class BoundaryClosure(Enum):
 class Mesh:
     """Triangle mesh returned by isosurface extraction."""
 
-    @staticmethod
     def save_obj(self, path: str, name: str) -> None: 
         """Save this mesh to a Wavefront OBJ file.
 
@@ -114,8 +113,15 @@ def build_isosurface(
         Must take in a 2D numpy array of float64 3D point coordinates of shape (N, 3) and
         return a float64 values array of shape (N,) or (N, 1), where N is the number of points
         being evaluated.
-    sampling_transform : npt.NDArray[np.float64]
-        Optional transform to transform the sample lattice.
+    sampling_transform : npt.NDArray[np.float64] | None, optional
+        Optional affine transform applied to the sampling lattice to control its
+        orientation and relative spacing. Provide the 3 x 3 linear part of the
+        transform from world coordinates to sampling coordinates.
+        If None, the default lattice is used. The resolution controls the overall
+        sampling distance, so uniform scaling of the transform has no effect.
+
+        This is useful for surfaces with a strong directional trend. Aligning the lattice with the
+        structure allows finer sampling across thin features and coarser sampling along smoother directions.
     gradient_fn : Callable | None, optional
         Optional callable for evaluating values and gradients during seed projection. It must
         take a float64 array of point coordinates with shape (N, 3) and return a tuple of
@@ -143,6 +149,7 @@ def build_isosurfaces(
     isovalues: list[float],
     isosurface_fn: Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]],
     *,
+    sampling_transform: npt.NDArray[np.float64] | None = None,
     gradient_fn: Optional[
         Callable[
             [npt.NDArray[np.float64]],
@@ -174,6 +181,17 @@ def build_isosurfaces(
         Must take in a 2D numpy array of float64 3D point coordinates of shape (N, 3) and
         return a float64 values array of shape (N,) or (N, 1), where N is the number of points
         being evaluated.
+    sampling_transform : npt.NDArray[np.float64] | None, optional
+        Optional affine transform applied to the sampling lattice to control its
+        orientation and relative spacing. Provide the 3 x 3 linear part of the
+        transform from world coordinates to sampling coordinates.
+        If None, the default lattice is used. The resolution controls the overall
+        sampling distance, so uniform scaling of the transform has no effect.
+
+        This is useful for surfaces with a strong directional trend.
+        Aligning the lattice with the structure allows
+        finer sampling across thin features and coarser sampling along smoother
+        directions.
     gradient_fn : Callable | None, optional
         Optional callable for evaluating values and gradients during seed projection. It must
         take a float64 array of point coordinates with shape (N, 3) and return a tuple of

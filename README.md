@@ -57,21 +57,21 @@ Add the desired crate to your `Cargo.toml`, for example:
 
 ```toml
 [dependencies]
-ferreus_rbf = "0.2.2"
+ferreus_rbf = "0.3"
 ```
 
 or
 
 ```toml
 [dependencies]
-ferreus_bbfmm = "0.2"
+ferreus_bbfmm = "0.3"
 ```
 
 or
 
 ```toml
 [dependencies]
-ferreus_rmt = "0.1"
+ferreus_rmt = "0.2"
 ```
 
 Refer to crates.io for the latest published versions.

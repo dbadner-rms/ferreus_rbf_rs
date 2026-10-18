@@ -362,7 +362,7 @@ dependencies = [
 
 [[package]]
 name = "ferreus_rmt"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "faer",
  "rayon",
@@ -1045,7 +1045,7 @@ dependencies = [
 
 [[package]]
 name = "py_ferreus_rmt"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "faer",
  "faer-ext",

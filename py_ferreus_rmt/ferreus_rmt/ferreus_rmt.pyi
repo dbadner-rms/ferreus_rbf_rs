@@ -16,6 +16,46 @@ import numpy as np
 import numpy.typing as npt
 from ferreus_rmt.progress import Progress
 
+def get_evaluation_extents(
+    extents: npt.NDArray[np.float64],
+    resolution: float,
+    *,
+    sampling_transform: npt.NDArray[np.float64] | None = None,
+) -> list[float]:
+    """Return world-coordinate bounds covering all lattice evaluation points.
+
+    Parameters
+    ----------
+    extents : npt.NDArray[np.float64]
+        Finite clipping bounds [xmin, ymin, zmin, xmax, ymax, zmax], shape (6,).
+    resolution : float
+        Finite, positive world-space sampling resolution.
+    sampling_transform : npt.NDArray[np.float64] | None, optional
+        Optional affine transform applied to the sampling lattice to control its
+        orientation and relative spacing. Provide the 3 x 3 linear part of the
+        transform from world coordinates to sampling coordinates.
+        If None, the default lattice is used. The resolution controls the overall
+        sampling distance, so uniform scaling of the transform has no effect.
+
+        This is useful for surfaces with a strong directional trend.
+        Aligning the lattice with the structure allows
+        finer sampling across thin features and coarser sampling along smoother
+        directions.
+
+    Returns
+    -------
+    list[float]
+        Six world-coordinate bounds covering the lattice points sampled during
+        extraction, which can extend beyond the clipping bounds. Use these bounds
+        when preparing an evaluator for the same resolution and transform.
+
+    Raises
+    ------
+    ValueError
+        If the bounds, resolution, or sampling transform are invalid.
+    """
+    ...
+
 class ClusterMethod(Enum):
     """Vertex clustering mode."""
 
@@ -41,7 +81,6 @@ class BoundaryClosure(Enum):
 class Mesh:
     """Triangle mesh returned by isosurface extraction."""
 
-    @staticmethod
     def save_obj(self, path: str, name: str) -> None:
         """Save this mesh to a Wavefront OBJ file.
 
@@ -113,8 +152,17 @@ def build_isosurface(
         Must take in a 2D numpy array of float64 3D point coordinates of shape (N, 3) and
         return a float64 values array of shape (N,) or (N, 1), where N is the number of points
         being evaluated. Single-column scalar values are returned to Python as shape (N,).
-    sampling_transform : npt.NDArray[np.float64]
-        Optional transform to transform the sample lattice.
+    sampling_transform : npt.NDArray[np.float64] | None, optional
+        Optional affine transform applied to the sampling lattice to control its
+        orientation and relative spacing. Provide the 3 x 3 linear part of the
+        transform from world coordinates to sampling coordinates.
+        If None, the default lattice is used. The resolution controls the overall
+        sampling distance, so uniform scaling of the transform has no effect.
+
+        This is useful for surfaces with a strong directional trend.
+        Aligning the lattice with the structure allows
+        finer sampling across thin features and coarser sampling along smoother
+        directions.
     gradient_fn : Callable | None, optional
         Optional callable function to evaluate values and gradients for seed projection. Values
         may have shape (N,) or (N, 1); gradients must have shape (N, 3).
@@ -137,8 +185,9 @@ def build_isosurfaces(
     extents: npt.NDArray[np.float64],
     resolution: float,
     isovalues: list[float],
-    surface_fn: Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]],
+    isosurface_fn: Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]],
     *,
+    sampling_transform: npt.NDArray[np.float64] | None = None,
     gradient_fn: Optional[
         Callable[
             [npt.NDArray[np.float64]],
@@ -164,11 +213,22 @@ def build_isosurfaces(
         Sampling resolution used by the extraction lattice.
     isovalues : list[float]
         List of values at which to extract isosurfaces.
-    surface_fn : Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]]
+    isosurface_fn : Callable[[npt.NDArray[np.float64]], npt.NDArray[np.float64]]
         Callable function to evaluate lattice sample points during isosurface extraction.
         Must take in a 2D numpy array of float64 3D point coordinates of shape (N, 3) and
         return a float64 values array of shape (N,) or (N, 1), where N is the number of points
         being evaluated. Single-column scalar values are returned to Python as shape (N,).
+    sampling_transform : npt.NDArray[np.float64] | None, optional
+        Optional affine transform applied to the sampling lattice to control its
+        orientation and relative spacing. Provide the 3 x 3 linear part of the
+        transform from world coordinates to sampling coordinates.
+        If None, the default lattice is used. The resolution controls the overall
+        sampling distance, so uniform scaling of the transform has no effect.
+
+        This is useful for surfaces with a strong directional trend.
+        Aligning the lattice with the structure allows
+        finer sampling across thin features and coarser sampling along smoother
+        directions.
     gradient_fn : Callable | None, optional
         Optional callable function to evaluate values and gradients for seed projection. Values
         may have shape (N,) or (N, 1); gradients must have shape (N, 3).

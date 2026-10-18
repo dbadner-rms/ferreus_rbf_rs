@@ -86,7 +86,7 @@ class DDMParams:
         Target maximum number of internal points within a leaf domain.
     overlap_knn : int
         Number of nearest neighbours of each internal point to query to find overlapping points.
-    coarse_reducation_factor : int
+    coarse_reduction_factor : int
         Maximum reduction factor between consecutive levels of the domain decomposition hierarchy.
     coarse_threshold : SizePolicy
         Maximum number of points in the coarsest level.
@@ -123,6 +123,8 @@ class FmmParams:
 
     - Linear and Spheroidal kernels -> `7`
     - ThinPlateSpline kernel -> `9`
+    - WendlandsC2 kernel -> `9`
+    - Gaussian and Cubic2 kernels -> `10`
     - Cubic kernel -> `11`  
     
     Default values when [`FmmParams`][ferreus_rbf.config.FmmParams] isn't provided to [`RBFInterpolator`][ferreus_rbf.RBFInterpolator]: 
