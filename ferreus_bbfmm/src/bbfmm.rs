@@ -143,28 +143,20 @@ impl LeafTargetIndices {
         }
     }
 
-    /// Borrow point chunks; generate grid indices one chunk at a time.
-    fn chunks<'a>(
+    /// Borrow a range of point indices; generate grid indices for the range.
+    fn chunk<'a>(
         &'a self,
-        targets: EvaluationTargets<'a>,
-        chunk_size: usize,
-    ) -> impl Iterator<Item = std::borrow::Cow<'a, [usize]>> + 'a {
-        assert!(chunk_size > 0, "target chunk size must be positive");
-
-        let count = self.len();
-
-        (0..count).step_by(chunk_size).map(move |start| {
-            let end = start + (count - start).min(chunk_size);
-
-            match self {
-                Self::Points(indices) => std::borrow::Cow::Borrowed(&indices[start..end]),
-                Self::Grid { .. } => std::borrow::Cow::Owned(
-                    (start..end)
-                        .map(|ordinal| self.target_index(ordinal, targets))
-                        .collect(),
-                ),
-            }
-        })
+        range: std::ops::Range<usize>,
+        targets: EvaluationTargets<'_>,
+    ) -> std::borrow::Cow<'a, [usize]> {
+        match self {
+            Self::Points(indices) => std::borrow::Cow::Borrowed(&indices[range]),
+            Self::Grid { .. } => std::borrow::Cow::Owned(
+                range
+                    .map(|ordinal| self.target_index(ordinal, targets))
+                    .collect(),
+            ),
+        }
     }
 }
 
@@ -1373,18 +1365,14 @@ impl<K: KernelFunction + Send + Sync> FmmTree<K> {
             })
             .for_each(|(leaf, indices, start)| {
                 let end = (start + chunk_size).min(indices.len());
-                let chunk = LeafTargetIndices::Points(
-                    (start..end)
-                        .map(|i| indices.target_index(i, target_points))
-                        .collect(),
-                );
-                let leaf_target_indices = &chunk;
+                // Borrowed for point targets; only grid targets allocate.
+                let chunk = indices.chunk(start..end, target_points);
 
                 if let Some(u_list) = self.tree_lists.u_lists.get(leaf) {
                     self.particle_to_particle::<WITH_GRADS, D>(
                         u_list,
                         target_points,
-                        leaf_target_indices,
+                        &chunk,
                         target_values_ref,
                         target_gradients_ref,
                         source_values,
@@ -1393,7 +1381,7 @@ impl<K: KernelFunction + Send + Sync> FmmTree<K> {
 
                 self.local_to_particle::<WITH_GRADS>(
                     leaf,
-                    leaf_target_indices,
+                    &chunk,
                     target_points,
                     target_values_ref,
                     target_gradients_ref,
@@ -1406,7 +1394,7 @@ impl<K: KernelFunction + Send + Sync> FmmTree<K> {
         &self,
         u_list: &HashSet<u64>,
         target_points: EvaluationTargets,
-        cell_target_indices: &LeafTargetIndices,
+        cell_target_indices: &[usize],
         target_values_ref: MatRef<f64>,
         target_gradients_ref: Option<MatRef<f64>>,
         source_values: MatRef<f64>,
@@ -1419,7 +1407,7 @@ impl<K: KernelFunction + Send + Sync> FmmTree<K> {
             let Some(sources) = self.tree_lists.leaf_source_indices.get(u_cell) else {
                 continue;
             };
-            for indices in cell_target_indices.chunks(target_points, B) {
+            for indices in cell_target_indices.chunks(B) {
                 sums.fill(0.0);
                 let targets: [[f64; D]; B] = std::array::from_fn(|t| {
                     std::array::from_fn(|d| {
@@ -1508,7 +1496,7 @@ impl<K: KernelFunction + Send + Sync> FmmTree<K> {
     fn local_to_particle<const WITH_GRADS: bool>(
         &self,
         leaf: &u64,
-        leaf_target_indices: &LeafTargetIndices,
+        chunk_target_indices: &[usize],
         target_points: EvaluationTargets,
         target_values_ref: MatRef<f64>,
         target_gradients_ref: Option<MatRef<f64>>,
@@ -1516,77 +1504,73 @@ impl<K: KernelFunction + Send + Sync> FmmTree<K> {
         let dims = self.dimensions as usize;
         let ngrad_cols = self.interpolation_order.pow(dims as u32);
 
-        leaf_target_indices
-            .chunks(target_points, self.eval_chunk_size)
-            .for_each(|chunk_target_indices| {
-                let mut point_locations_mat = Mat::<f64>::from_fn(
-                    chunk_target_indices.len(),
-                    target_points.dimensions(),
-                    |i, j| target_points.coordinate(chunk_target_indices[i], j),
+        let mut point_locations_mat = Mat::<f64>::from_fn(
+            chunk_target_indices.len(),
+            target_points.dimensions(),
+            |i, j| target_points.coordinate(chunk_target_indices[i], j),
+        );
+
+        let (cell_center, cell_length) =
+            morton::get_center_length(*leaf, &self.center, self.radius, &self.dimensions);
+
+        let cell_local_transfer = chebyshev::get_approximation_coefficients(
+            self.interpolation_order,
+            &mut point_locations_mat,
+            &cell_center,
+            &cell_length,
+            &self.precompute_operators.polynomial_nodes,
+            &(self.dimensions as usize),
+            WITH_GRADS,
+        );
+
+        let grads = if WITH_GRADS {
+            Some(
+                cell_local_transfer
+                    .gradients
+                    .as_ref()
+                    .expect("ValuesAndGradients mode requires gradient coefficients"),
+            )
+        } else {
+            None
+        };
+
+        for j in 0..self.nrhs {
+            let cell_column_index = self.tree_lists.key_to_index_map.get(leaf).unwrap()
+                + j * self.tree_lists.tree.len();
+            let local_coefficients = self.local_coefficients.col(cell_column_index);
+            let local_target_values = &cell_local_transfer.values * &local_coefficients;
+
+            unsafe {
+                let value_ptr = target_values_ref.col(j).as_ptr() as *mut f64;
+                chunk_target_indices.iter().enumerate().for_each(
+                    |(coeff_idx, target_idx)| {
+                        *value_ptr.add(*target_idx) += local_target_values[coeff_idx];
+                    },
                 );
+            }
 
-                let (cell_center, cell_length) =
-                    morton::get_center_length(*leaf, &self.center, self.radius, &self.dimensions);
+            if WITH_GRADS {
+                let grads = grads.expect("ValuesAndGradients mode requires gradients");
+                let target_gradients_ref = target_gradients_ref
+                    .expect("ValuesAndGradients mode requires gradient storage");
 
-                let cell_local_transfer = chebyshev::get_approximation_coefficients(
-                    self.interpolation_order,
-                    &mut point_locations_mat,
-                    &cell_center,
-                    &cell_length,
-                    &self.precompute_operators.polynomial_nodes,
-                    &(self.dimensions as usize),
-                    WITH_GRADS,
-                );
-
-                let grads = if WITH_GRADS {
-                    Some(
-                        cell_local_transfer
-                            .gradients
-                            .as_ref()
-                            .expect("ValuesAndGradients mode requires gradient coefficients"),
-                    )
-                } else {
-                    None
-                };
-
-                for j in 0..self.nrhs {
-                    let cell_column_index = self.tree_lists.key_to_index_map.get(leaf).unwrap()
-                        + j * self.tree_lists.tree.len();
-                    let local_coefficients = self.local_coefficients.col(cell_column_index);
-                    let local_target_values = &cell_local_transfer.values * &local_coefficients;
+                for d in 0..dims {
+                    let col_start = ngrad_cols * d;
+                    let local_grads = grads.subcols(col_start, ngrad_cols);
+                    let local_target_grad = &local_grads * &local_coefficients;
+                    let col = j * dims + d;
 
                     unsafe {
-                        let value_ptr = target_values_ref.col(j).as_ptr() as *mut f64;
+                        let grad_ptr = target_gradients_ref.col(col).as_ptr() as *mut f64;
                         chunk_target_indices.iter().enumerate().for_each(
                             |(coeff_idx, target_idx)| {
-                                *value_ptr.add(*target_idx) += local_target_values[coeff_idx];
+                                *grad_ptr.add(*target_idx) += local_target_grad[coeff_idx];
                             },
                         );
                     }
-
-                    if WITH_GRADS {
-                        let grads = grads.expect("ValuesAndGradients mode requires gradients");
-                        let target_gradients_ref = target_gradients_ref
-                            .expect("ValuesAndGradients mode requires gradient storage");
-
-                        for d in 0..dims {
-                            let col_start = ngrad_cols * d;
-                            let local_grads = grads.subcols(col_start, ngrad_cols);
-                            let local_target_grad = &local_grads * &local_coefficients;
-                            let col = j * dims + d;
-
-                            unsafe {
-                                let grad_ptr = target_gradients_ref.col(col).as_ptr() as *mut f64;
-                                chunk_target_indices.iter().enumerate().for_each(
-                                    |(coeff_idx, target_idx)| {
-                                        *grad_ptr.add(*target_idx) += local_target_grad[coeff_idx];
-                                    },
-                                );
-                            }
-                        }
-                    }
                 }
-            });
+            }
+        }
     }
 }
 
